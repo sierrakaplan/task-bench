@@ -97,6 +97,8 @@ fi
     popd
     make -C charm++ clean
     make -C charm++
+    make -C charm++_old clean
+    make -C charm++_old
     (
         export CHARM_DIR="$CHARM_SMP_DIR"
         rm -rf charm++_smp
