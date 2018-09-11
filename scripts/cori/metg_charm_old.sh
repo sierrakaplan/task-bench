@@ -24,6 +24,6 @@ function sweep {
 
 for n in $SLURM_JOB_NUM_NODES; do
     for t in stencil_1d; do
-        sweep launch $n $t > charm_type_${t}_nodes_${n}.log
+        sweep launch $n $t > charm_old_type_${t}_nodes_${n}.log
     done
 done
