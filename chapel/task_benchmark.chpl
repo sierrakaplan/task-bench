@@ -25,6 +25,8 @@ extern {
 }
 
 proc main(args: [] string) {
+  writeln("in main");
+  stdout.flush();
   var argc = args.numElements;
   var app = app_create(argc:int(32), convert_args_to_c_args(argc, args));
   var graph_list = app_task_graphs(app); // array of tasks grapsh 
@@ -52,19 +54,7 @@ proc main(args: [] string) {
   var task_completed = make_task_completed(n_graphs, max_width, max_timesteps);
   var task_used = make_task_completed(n_graphs, max_width, max_timesteps);
 
-  task_completed[.., .., ..].write(0);
-  task_used[.., .., ..].write(0);
-
-  // Run once for warmup.
   execute_task_graphs(graphs, task_result, task_completed, task_used);
-
-  task_completed[.., .., ..].write(0);
-  task_used[.., .., ..].write(0);
-
-  t.start();
-  execute_task_graphs(graphs, task_result, task_completed, task_used);
-  t.stop();
-  app_report_timing(app, t.elapsed());
 }
 
 proc make_task_result(n_graphs, max_width, max_output_bytes) {
@@ -92,9 +82,9 @@ proc make_task_completed(n_graphs, max_width, max_timesteps) {
 }
 
 proc execute_task_graphs(graphs, task_result, task_completed, task_used) {
-  coforall loc in Locales {
-    on loc {
-      coforall graph in graphs {
+  coforall graph in graphs {
+    coforall loc in Locales {
+      on loc {
         execute_task_graph2(graph, task_result, task_completed, task_used);
       }
     }
@@ -104,121 +94,15 @@ proc execute_task_graphs(graphs, task_result, task_completed, task_used) {
 proc execute_task_graph2(graph, task_result, task_completed, task_used) {
   const graph_index = graph.graph_index;
 
-  // Figure out which set of points have been assigned to this locale.
-  var first_point = here.id * graph.max_width / numLocales;
-  var last_point = (here.id + 1) * graph.max_width / numLocales - 1;
+  writeln("running graph ", graph_index, " on locale ", here.id);
+  writeln("  in chapel: graph_index ", graph_index, " timesteps ", graph.timesteps, " max_width ", graph.max_width, " dtype ", graph.dependence, " (on locale ", here.id, ")");
+  stdout.flush();
 
-  coforall point in first_point..last_point {
-    // Preallocate memory for input and scratch.
-
-    var n_dsets = task_graph_max_dependence_sets(graph):int(64);
-
-    var max_deps = 0;
-    for dset in 0..n_dsets-1 {
-      var interval_list = task_graph_dependencies(graph, dset, point);
-      var n_intervals = interval_list_num_intervals(interval_list);
-      for i in 0..n_intervals-1 {
-        var interval = interval_list_interval(interval_list, i);
-        max_deps += interval.end - interval.start + 1;
-      }
-      interval_list_destroy(interval_list);
-    }
-
-    var output_bytes = graph.output_bytes_per_task:int(64);
-
-    var inputs: [{0..max_deps-1, 0..output_bytes-1}] int(8);
-
-    var scratch_bytes = graph.scratch_bytes_per_task;
-    var scratch_ptr = c_malloc(int(8), scratch_bytes);
-
-    // Initialize input_ptr and input_bytes... these don't need to
-    // change because we can just set n_inputs dynamically.
-    var input_ptr = c_malloc(c_ptr(int(8)), max_deps);
-    var input_bytes = c_malloc(uint(64), max_deps);
-    for dep in 0..max_deps-1 {
-        input_ptr[dep] = c_ptrTo(inputs[dep, 0]);
-        input_bytes[dep] = output_bytes:uint(64);
-    }
-
-    // Initialize output_ptr... this doesn't need to change because
-    // we're just overwriting the same memory over and over.
-    var output_ptr = c_ptrTo(task_result[graph_index, point, 0]);
-
-    var timesteps = graph.timesteps:int(64);
-    for timestep in 0..timesteps-1 {
-      var offset = task_graph_offset_at_timestep(graph, timestep):int(64);
-      var width = task_graph_width_at_timestep(graph, timestep):int(64);
-
-      if (point < offset || point >= offset + width) {
-        continue;
-      }
-
-      var last_offset = task_graph_offset_at_timestep(graph, timestep-1):int(64);
-      var last_width = task_graph_width_at_timestep(graph, timestep-1):int(64);
-
-      // Fetch inputs for this timestep.
-      var n_inputs = 0;
-
-      // RAW dependencies: copy data from last timestep.
-      {
-        var dset = task_graph_dependence_set_at_timestep(graph, timestep);
-        var interval_list = task_graph_dependencies(graph, dset, point);
-        var n_intervals = interval_list_num_intervals(interval_list);
-        for i in 0..n_intervals-1 {
-          var interval = interval_list_interval(interval_list, i);
-          for dep in interval.start..interval.end {
-            if (dep < last_offset || dep >= last_offset + last_width) {
-              continue;
-            }
-
-            task_completed[graph_index, dep, timestep-1].waitFor(1);
-
-            inputs[n_inputs, ..] = task_result[graph_index, dep, ..];
-
-            task_used[graph_index, dep, timestep].add(1);
-
-            n_inputs += 1;
-          }
-        }
-        interval_list_destroy(interval_list);
-      }
-
-      // WAR dependencies: avoid copying over data that is still being copied.
-      {
-        var n_war_deps = 0;
-        if (point >= last_offset && point < last_offset + last_width) {
-          var dset = task_graph_dependence_set_at_timestep(graph, timestep);
-          var interval_list = task_graph_reverse_dependencies(graph, dset, point);
-          var n_intervals = interval_list_num_intervals(interval_list);
-          for i in 0..n_intervals-1 {
-            var interval = interval_list_interval(interval_list, i);
-            for dep in interval.start..interval.end {
-              if (dep < offset || dep >= offset + width) {
-                continue;
-              }
-
-              n_war_deps += 1;
-            }
-          }
-          interval_list_destroy(interval_list);
-        }
-
-        task_used[graph_index, point, timestep].waitFor(n_war_deps);
-      }
-
-      // Execute task.
-      task_graph_execute_point_scratch_nonconst(
-        graph, timestep, point,
-        output_ptr, output_bytes: uint(64),
-        input_ptr, input_bytes, n_inputs: uint(64),
-        scratch_ptr, scratch_bytes: uint(64));
-
-      // Mark task completed.
-      task_completed[graph_index, point, timestep].write(1);
-    }
-
-    c_free(scratch_ptr);
-  }
+  writeln("  chapel is about to call C");
+  stdout.flush();
+  var outer_n_dsets = task_graph_max_dependence_sets(graph):int(64);
+  writeln("  chapel returned from call to C");
+  stdout.flush();
 }
 
 proc convert_args_to_c_args(argc, args) {

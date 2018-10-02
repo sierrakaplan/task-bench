@@ -24,6 +24,7 @@
 #include <set>
 #include <string>
 #include <math.h>
+#include <unistd.h>
 
 #include "core.h"
 #include "core_kernel.h"
@@ -204,6 +205,14 @@ long TaskGraph::width_at_timestep(long timestep) const
 
 long TaskGraph::max_dependence_sets() const
 {
+  constexpr size_t bufsize = 8192;
+  char name[bufsize];
+  assert(gethostname(&name[0], bufsize) == 0);
+  name[bufsize-1] = 0;
+
+  fprintf(stdout, "TaskGraph::max_dependence_sets() graph_index %ld timesteps %ld max_width %ld dtype %d (on %s)\n",
+         graph_index, timesteps, max_width, dependence, name);
+  fflush(stdout);
   switch (dependence) {
   case DependenceType::TRIVIAL:
   case DependenceType::NO_COMM:
