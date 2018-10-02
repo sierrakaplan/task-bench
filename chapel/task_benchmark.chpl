@@ -29,7 +29,7 @@ proc main(args: [] string) {
   stdout.flush();
   var argc = args.numElements;
   var app = app_create(argc:int(32), convert_args_to_c_args(argc, args));
-  var graph_list = app_task_graphs(app); // array of tasks grapsh 
+  var graph_list = app_task_graphs(app); // array of tasks graphs
   app_display(app);
 
   var n_graphs = task_graph_list_num_task_graphs(graph_list);
@@ -38,60 +38,20 @@ proc main(args: [] string) {
     graphs[i] = task_graph_list_task_graph(graph_list, i);
   }
 
-  // For simplicity, we're going to allocate one giant domain for
-  // task results and completion variables, so the domain has to be
-  // the upper bound of all the tasks we'll need.
-  var max_width: int(64) = 0;
-  var max_timesteps: int(64) = 0;
-  var max_output_bytes: int(64) = 0;
-  for graph in graphs {
-    max_width = max(max_width, graph.max_width: int(64));
-    max_timesteps = max(max_timesteps, graph.timesteps: int(64));
-    max_output_bytes = max(max_output_bytes, graph.output_bytes_per_task: int(64));
-  }
-
-  var task_result = make_task_result(n_graphs, max_width, max_output_bytes);
-  var task_completed = make_task_completed(n_graphs, max_width, max_timesteps);
-  var task_used = make_task_completed(n_graphs, max_width, max_timesteps);
-
-  execute_task_graphs(graphs, task_result, task_completed, task_used);
+  execute_task_graphs(graphs);
 }
 
-proc make_task_result(n_graphs, max_width, max_output_bytes) {
-  const space = {0..n_graphs-1, 0..max_width-1, 0..max_output_bytes-1};
-  const locale_space = {0..0, 0..numLocales-1, 0..0};
-  var targets: [locale_space] locale;
-  forall i in 0..numLocales-1 {
-    targets[0, i, 0] = Locales[i];
-  }
-  const D: domain(3) dmapped Block(boundingBox=space, targetLocales=targets) = space;
-  var result: [D] int(8);
-  return result;
-}
-
-proc make_task_completed(n_graphs, max_width, max_timesteps) {
-  const space = {0..n_graphs-1, 0..max_width-1, 0..max_timesteps-1};
-  const locale_space = {0..0, 0..numLocales-1, 0..0};
-  var targets: [locale_space] locale;
-  forall i in 0..numLocales-1 {
-    targets[0, i, 0] = Locales[i];
-  }
-  const D: domain(3) dmapped Block(boundingBox=space, targetLocales=targets) = space;
-  var result: [D] atomic int(64);
-  return result;
-}
-
-proc execute_task_graphs(graphs, task_result, task_completed, task_used) {
+proc execute_task_graphs(graphs) {
   coforall graph in graphs {
     coforall loc in Locales {
       on loc {
-        execute_task_graph2(graph, task_result, task_completed, task_used);
+        execute_task_graph2(graph);
       }
     }
   }
 }
 
-proc execute_task_graph2(graph, task_result, task_completed, task_used) {
+proc execute_task_graph2(graph) {
   const graph_index = graph.graph_index;
 
   writeln("running graph ", graph_index, " on locale ", here.id);
