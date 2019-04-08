@@ -94,7 +94,8 @@ void Subchare::initGraph(MulticastMsg* msg) {
   }
 
   output.resize(graph.output_bytes_per_task);
-  scratch.resize(graph.scratch_bytes_per_task);
+  scratch = (char *)malloc(graph.scratch_bytes_per_task);
+  assert(scratch);
 
   CProxySection_Subchare::contribute(sid, CkCallback(CkReductionTarget(Main, workerReady), mainProxy));
 }
@@ -110,7 +111,7 @@ void Subchare::runTimestep(MulticastMsg* msg) {
               (const char **)input_ptrs[currentTimestep].data(),
               (const size_t *)input_bytes[currentTimestep].data(),
               inputs[currentTimestep].size(),
-              scratch.data(), scratch.size());
+              scratch, graph.scratch_bytes_per_task);
 
   for (long target : whereToSend[currentTimestep]) {
     thisProxy[target].receive(output);

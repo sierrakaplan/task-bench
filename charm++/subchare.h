@@ -35,7 +35,7 @@ class Subchare : public CBase_Subchare {
   std::vector<std::vector<char *> > input_ptrs;
   std::vector<std::vector<size_t> > input_bytes;
   std::vector<char> output;
-  std::vector<char> scratch;
+  char *scratch;
   bool sent;
   bool firstTime;
   App app;
