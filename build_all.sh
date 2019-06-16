@@ -75,6 +75,9 @@ fi
 if [[ $USE_LEGION -eq 1 ]]; then
     make -C legion clean
 fi
+if [[ $USE_GASNET -eq 1 ]]; then
+    make -C gasnet clean
+fi
 if [[ $USE_REGENT -eq 1 ]]; then
     make -C regent clean
 fi
@@ -114,6 +117,9 @@ if [[ $USE_REGENT -eq 1 ]]; then
 fi
 if [[ $USE_LEGION -eq 1 ]]; then
     make -C legion -j$THREADS
+fi
+if [[ $USE_GASNET -eq 1 ]]; then
+    make -C gasnet -j$THREADS
 fi
 if [[ $USE_REALM -eq 1 ]]; then
     make -C realm -j$THREADS

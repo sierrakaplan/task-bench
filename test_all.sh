@@ -80,6 +80,14 @@ if [[ $USE_LEGION -eq 1 ]]; then
     done
 fi
 
+if [[ $USE_GASNET -eq 1 ]]; then
+    for t in "${extended_types[@]}"; do
+        for k in "${kernels[@]}"; do
+            ./gasnet/main -steps $steps -type $t $k -ll:cpu 2
+        done
+    done
+fi
+
 if [[ $USE_REALM -eq 1 ]]; then
     for t in "${extended_types[@]}"; do
         for k in "${kernels[@]}"; do
